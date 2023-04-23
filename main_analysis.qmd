@@ -224,3 +224,103 @@ plt.title('Distribution of "months as member"');
 - It looks like most of the members have been members for between 1 to 20 months and then there's smaller proportion of people who have been members for longer than that.
 - There are few outliers here who have been members a lot longer than everyone else which have given a long right tail to the distribution
 
+
+
+#### We can look at this distribution with a log scale on x-axis**
+
+```{python}
+#| fig-align: center
+sns.histplot(data = clean_data, x = 'months_as_member', kde=True)
+plt.xscale('log')
+plt.title('Distribution of "months as member (log scale)"');
+```
+
+#### Let's look at the relationship between "months_as_member" and whether the person attends the class or not
+
+```{python}
+#| fig-align: center
+with plt.style.context('dark_background'):
+
+    fig, ax = plt.subplots(1, 2, figsize=(12, 5))
+    
+    sns.stripplot(data = clean_data, x='attended', 
+                  y='months_as_member', color='steelblue', 
+                  alpha=0.5, ax=ax[0])
+    
+    sns.pointplot(data=clean_data, x='attended',
+                  estimator='mean',  y='months_as_member', 
+                  color='white', ax=ax[0])
+    
+    attended = clean_data['attended'].replace({0:"No", 1:"Yes"})
+    sns.ecdfplot(data=clean_data, x='months_as_member', hue=attended, ax=ax[1])
+
+    plt.setp(ax[0].lines, zorder=100)
+    plt.setp(ax[0].collections, zorder=100, label="")
+    ax[0].grid(False)
+    ax[1].grid(False)
+    ax[0].margins(x=0.1)
+
+    ax[0].set_ylim(0)
+    ax[0].annotate("Average for both categories", xy=(0.4, 20), xytext=(0.2, 100), arrowprops=dict(facecolor='black', shrink=0.05))
+    ax[0].set_ylabel("Number of months as member of club")
+    ax[0].set_xlabel("Attended the class?")
+    ax[0].set_xticklabels(['No', "yes"])
+    ax[0].annotate(xy=(0, 0.95), xytext=(0, 0.85), textcoords ='axes fraction', text="The people who attend the class are \n more likely to have been member of \n the club for longer time");
+```
+
+
+#### ok there is a lot of unpack here :)
+1. In the right graph we can see how many months each person has been member of the club and whether they attended the class or not. 
+2. The points for members who did not attend are closely stacked togethere whereas the points for people who did attend are more spread out and have longer range. 
+3. **The white points joind by a line show the average of _months as member_ for both categories** 
+4. we can see a clear difference there. It's not very big but it is definitely noticeble. 
+5. The right graph shows a ECDF for both categories. 
+6. we can see that people who attended the event are more likely to have higher number of months as members of the club 
+<br>
+Ok! This was just some quick analysis. before we go any further into our analysis
+- we will split the data into train and test set first
+- we don't want to learn patterns from test set too much so before doing a deeper analysis we will separate them
+
+
+```{python}
+#| cold-fold: false
+# Obtaining a train test split
+from sklearn.model_selection import train_test_split
+X, y = clean_data.drop("attended", axis=1), clean_data["attended"]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.3, stratify=y, random_state=241)
+```
+
+#### First of all let's look at relationship between all the features and our target variable. 
+i'm gonna go ahead and write a function that will provide us with plots for this
+
+```{python}
+from utils import get_relations
+
+get_relations(dataframe = X_train, y = y_train,  which="numerics")
+```
+
+#### Now let's take a look at categorical columns <br>
+we will look at how the proportions of the categorical variables are distributed for our target variable. 
+
+```{python}
+#| fig-align: center
+get_relations(dataframe = X_train, y = y_train, which="categoricals")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
