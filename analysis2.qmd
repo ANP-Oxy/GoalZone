@@ -1,0 +1,457 @@
+---
+title: "Predicting customer behaviour using scikit learn"
+author: Anurag Patil
+format:
+  html:
+    grid:
+      body-width: 1000px
+      margin-width: 150px
+    code-fold: true
+    theme: Solar
+    mainfont: sans-serif
+    monofont: monospace
+    page-layout: full
+    toc: true
+    toc-depth: 2
+    toc-expand: true
+jupyter: data_science
+---
+
+
+- This is a revamped version of the original case study that I worked on for DataCamp's **"Data Scientist Associate certification".**
+- The dataset as well as the problem scenario was provided by DataCamp. 
+- In this report I will be working on a fictitious business scenario, dealing with a customer behaviour classification problem. 
+- I will clean the data, validate it, do some visual insepction of the data and then work on modelling it. 
+
+
+## 1. Scenario
+
+- GoalZone is a fitness club chain in Canada.
+- GoalZone offers a range of fitness classes in two capacities - 25 and 15.
+- Some classes are always fully booked. Fully booked classes often have a low attendance rate.
+- GoalZone wants to increase the number of spaces available for classes.
+- They want to do this by predicting whether the member will attend the class or not.
+- If they can predict a member will not attend the class, they can make another space
+  available.
+  
+---
+
+## 2. Data
+
+```{python}
+
+# Importing the necessary modules
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+plt.style.use("seaborn-v0_8-whitegrid")
+
+# let's get the data
+url = "https://s3.amazonaws.com/talent-assets.datacamp.com/fitness_class_2212.csv"
+data = pd.read_csv(url)
+data.head()
+
+```
+
+**The data has 8 columns and 1500 rows**<br>
+The basic descriptions of the columns are.<br> 
+
+
+1. unique booking id
+2. The number of months as this fitness club member
+3. weight 
+4. The number of days before the class the member registered
+5. day of week of the class
+6. time of class
+7. category
+8. The last column attended shows whether the member attended the class or not with 0 corresponding to "No" and 1 to "Yes".
+
+
+## 3. Defining the problem
+- **The business wants to predict whether members will attend using the data provided**
+- The task might be to predict customer behaviour but we should always remember the end goal is to drive business growth. 
+- This should be kept in mind during the analysis. 
+- here we want to predict whether the customer will attend the class or not but the end goal should be how can we get more customers to attend the class?
+
+Now that we have taken a glimpse of the data, decided what our end goal is let's get into the actual analysis. we will go through this step by step by first validating the data then doing some Exploratory analysis and finally training some machine learning models. 
+
+## 4. Data cleaning and validation. 
+<br>
+Let's take a look at some information about the columns 
+
+1. "months_as_member" : 1 is minimum value for this column
+2. "weight" : 40.00 is minimum value
+3. "days_before" : 1 is minimum value
+4. "day_of_week" : "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" are valid values
+5. "time" : "AM" , "PM" are valid values
+6. "category" : "Yoga", "Aqua" , "Strength", "HIIT", "Cycling", "unknown" are valid values
+7. "attended" : 1, 0 are valid values
+
+Below I'm creating a python dictionary that contains some metadata about the data we have. This will be used later on to validate the integrity of the data. 
+
+```{python}
+
+data_dict = {"booking_id"  : "The unique identifier of the booking.",
+
+                "months_as_member" : 1, # minimum value for this column
+
+                "weight" : 40.00, # minimum value
+
+                "days_before" : 1, # minimum value
+
+                "day_of_week" : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], # valid categories
+
+                "time" : ["AM" , "PM"], # valid categories
+
+                "category" : ["Yoga", "Aqua" , "Strength", "HIIT", "Cycling", "unknown"], # valid categories
+
+                "attended" : [1, 0] # valid categories
+                }
+```
+
+
+#### Let's take a look at what kind of problems the data has. <br>
+first we will check the categorical columns 
+
+```{python, attr.output='.details summary="Output"'}
+#| output: false
+# Select the categorical columns
+# Print value counts for each of those columns
+for column in data.select_dtypes("object").columns:
+    print(f"{column} :\n{data[column].value_counts()} \n")
+```
+
+
+**I have disabled the output here because it is very long but you can execute the code and take a look at it**<br>
+**The problems identified in the categorical columns are**
+
+1. The days before column is not completely numeric and some cells have "days" string written alongside the number of days. This is data entry incosistency and needs to be fixed. 
+2. The day of the week also has data entry errors and the weekday names aren't consistent. 
+3. The time columns seems fine
+4. category column has "-" as values in few columns which will need to be replaced. 
+
+
+**I will peform series of operations on the data and fix the problems mentioned above.**
+
+ 1) first we fix the days before column by elimination string characters from it
+ 2) next we fixed the day_of_week column by using the function defind above
+ 3) then fix the category column by replacing "-" with "unknown"
+ 4) after that we change the datatypes of the columns
+ 5) lastly drop the "booking_id" column as it is not useful
+
+```{python}
+
+# this is a function to fix the day_of_week column
+def fix_dow(df):
+    df['day_of_week'] = df['day_of_week'].str.replace('Fri.', "Fri")
+    df['day_of_week'] = df['day_of_week'].str.replace('Monday', "Mon")
+    df['day_of_week'] = df['day_of_week'].str.replace('Wednesday', "Wed")
+    return df['day_of_week']
+
+# this fuction will carry out cleaning steps outlined above
+def clean_data(data = data):
+    return (data
+            .assign(days_before = data['days_before'].str.extract(r'(\d+)'),
+                    day_of_week = fix_dow,
+                    category = data['category'].replace("-", "unknown"))
+            .astype({"days_before":"int", "day_of_week":"category", "time":"category", 
+                     "category":"category", "attended":"category"})
+            .drop("booking_id", axis=1) # drop booking id column
+           )
+# let's store the clean dataframe in a new variable
+clean_data = clean_data()
+clean_data.head()
+```
+
+We can look at the output of the cleaned data.
+Let's validate this data using a utility functions I have written. 
+This will check the columns to see if they contain valid categories or are in valid numerical range. 
+
+
+```{python}
+from utils import validate
+validate(clean_data, data_dict)
+```
+as we can see the data has passed the validation tests that were defined. <br>
+
+#### Does the data have missing values?
+
+
+```{python}
+print(clean_data.isna().sum())
+```
+
+
+- it looks like the weight column has few missing values
+- we will have to impute these values later before we train the model
+- let's keep going for now <br>
+**This ends the section on data validation and cleaning. Now we will start analyzing the data**
+
+## 5. Visual inspection
+- now that we have cleaned the data it is time to start analyzing it.
+- Let's take a look at basic summary statistics for the numerical variables
+
+```{python}
+clean_data.describe()
+```
+it doesn't look like there are any anomalies in this data. so we can keep going
+
+
+#### Let's see the distribution of our target variable. 
+
+```{python}
+#| fig-align: center
+ax = sns.countplot(data = clean_data, x = 'attended', width=0.5)
+ax.set_xticklabels(labels=['No', 'Yes'])
+ax.set_yticks([])
+ax.bar_label(ax.containers[0], label_type='center', color='black')
+ax.set_xlabel("Attended the class or not?");
+```
+- We can see that the amount of people that did not attend the class is more than twice the amount of the people that did attend the class
+- So the classes for our target variable are imbalanced 
+- Here we have to be careful due to this. 
+- A model that predicts every Member as someone not attending the class will still have about 70% accuracy
+- Is machine learning even the right approach to solve this problem? 
+- If the percentage of members who attend the class is pretty consistent you could just oversell the tickets? 
+- There are lots of point of views from which you can think about this problem. for now we will simply continue the analysis
+
+#### Next we will take a look at the "months_as_member" column
+
+```{python}
+#| fig-align: center
+sns.histplot(data = clean_data, x = 'months_as_member', kde=True)
+plt.title('Distribution of "months as member"');
+
+```
+
+- The distribution is right skewed 
+- It looks like most of the members have been members for between 1 to 20 months and then there's smaller proportion of people who have been members for longer than that.
+- There are few outliers here who have been members a lot longer than everyone else which have given a long right tail to the distribution
+
+
+```{python}
+#| fig-align: center
+sns.histplot(data = clean_data, x = 'months_as_member', kde=True)
+plt.xscale('log')
+plt.title('Distribution of "months as member (log scale)"')
+```
+
+#### Let's look at the relationship between "months_as_member" and whether the person attends the class or not
+
+```{python}
+#| fig-align: center
+with plt.style.context('dark_background'):
+
+    fig, ax = plt.subplots(1, 2, figsize=(12, 5))
+    sns.stripplot(data = clean_data, x='attended',
+                  y='months_as_member', color='steelblue',
+                  alpha=0.5, ax=ax[0])
+    sns.pointplot(data=clean_data, x='attended',
+                  estimator='mean',  y='months_as_member',
+                  color='white', ax=ax[0])
+    attended = clean_data['attended'].replace({0:"No", 1:"Yes"})
+    sns.ecdfplot(data=clean_data, x='months_as_member', hue=attended, ax=ax[1])
+
+    plt.setp(ax[0].lines, zorder=100)
+    plt.setp(ax[0].collections, zorder=100, label="")
+    ax[0].grid(False)
+    ax[1].grid(False)
+    ax[0].margins(x=0.1)
+
+    ax[0].set_ylim(0)
+    ax[0].annotate("Average for both categories", xy=(0.4, 20), xytext=(0.2, 100), arrowprops=dict(facecolor='black', shrink=0.05))
+    ax[0].set_ylabel("Number of months as member of club")
+    ax[0].set_xlabel("Attended the class?")
+    ax[0].set_xticklabels(['No', "yes"])
+    ax[0].annotate(xy=(0, 0.95), xytext=(0, 0.85), textcoords ='axes fraction', text="The people who attend the class are \n more likely to have been member of \n the club for longer time");
+```
+
+
+#### ok there is a lot of unpack here :)
+1. In the right graph we can see how many months each person has been member of the club and whether they attended the class or not. 
+2. The points for members who did not attend are closely stacked togethere whereas the points for people who did attend are more spread out and have longer range. 
+3. **The white points joind by a line show the average of _months as member_ for both categories** 
+4. we can see a clear difference there. It's not very big but it is definitely noticeble. 
+5. The right graph shows a ECDF for both categories. 
+6. we can see that people who attended the event are more likely to have higher number of months as members of the club 
+<br>
+Ok! This was just some quick analysis. before we go any further into our analysis
+- we will split the data into train and test set first
+- we don't want to learn patterns from test set too much so before doing a deeper analysis we will separate them
+
+
+
+```{python}
+# Obtaining a train test split
+from sklearn.model_selection import train_test_split
+X, y = clean_data.drop("attended", axis=1), clean_data["attended"]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.3, stratify=y, random_state=241)
+
+```
+
+#### First of all let's look at relationship between all the features and our target variable. 
+i'm gonna go ahead and import a function that will provide us with plots for this 
+
+
+```{python}
+#| fig-align:center
+from utils import get_relations
+get_relations(X_train, y=y_train, which="numerics")
+```
+
+- we can see here that the months_as_member and weight column have some correlation with the target variable.
+- Depending on whether the target variable is "yes" or "no" the distribution of these features has slight difference
+- on the other hand the days_before column doesn't seem to have any correlation with the target variable as the distribution for both the category of target variable seem pretty similar
+- one other observation is that the months_as_member and weight column seem to few outliers that might affect the model performance later. 
+
+
+#### Now let's take a look at categorical columns
+we will look at how the proportions of the categorical variables are distributed for our target variable. 
+
+```{python}
+#| fig-align: center
+get_relations(X_train, y=y_train, which="categoricals")
+
+```
+
+- what we can see in this plot is the variables "day_of_week", "time" and "category" and how they are distributed across our target classes
+- I normalized the counts so we can look at the proportions and compare to see if any of these categorical features have any correlation with the target
+- looking at these plots it doesn't look like there is any clear correlation. 
+
+#### Next, we will take a look at how the numeric feature are distributed and do they have any correlation with each other?
+
+```{python}
+#| fig-align: center
+sns.pairplot(data = X_train);
+```
+
+- We already know that the "Months_as_member" and "weight" features have some correlation with the target
+- here it looks like they are also related to each other sightly
+- let's take a look at these two columns
+
+```{python}
+#| fig-align: center
+sns.scatterplot(data=clean_data, x='months_as_member', y="weight", hue=y_train)
+plt.ylim(0)
+plt.xscale('log')
+```
+- since the months as member feature has skewed distribution I Have to put it on a **Log-Scale**
+- here we can see that it seems like there is some negative correlation between these two features
+- it makes sense that people with longer duration are likely to have lower weight as they are more likely to workout regularly. 
+- another thing we can see is that the members with higher months as members are likely to attend the class they registered to
+
+## 6. Preprocessing and Building Pipeline. 
+- We have looked at the distributions of the data
+- we also looked at how the various features are related to the target variable as well as relationship between categorical features
+- The next step is to prepare the data for training a machine learning model 
+- We will create a pipeline that does all these things for us 
+- I will also include a step for **Removing Outliers** from the data inside the pipeline. Since sci-kit learn doesn't allow for this functionality I will be using **imbalanced-learn** to implement that. You can find out more about it [here](https://imbalanced-learn.org/stable/auto_examples/applications/plot_outlier_rejections.html)
+
+#### The process of removing outliers. 
+
+- I will write a custom function which will do following things
+    1. It will take X_train and Y_train
+    2. It will remove any rows corresponding to outliers from X_train and y_train
+    3. The outliers here will be any observations that are outside of 3 standard deviations of the distribution. 
+- Before removing outliers we will also do other preprocessing steps such as 
+    1. Imputing missing values for the weight column
+    2. Encoding the Categorical variables
+    3. after that outiler rejection will take place
+    4. and lastly we will scale and standardize the data
+
+
+```{python}
+
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import OrdinalEncoder
+from imblearn.pipeline import Pipeline
+from imblearn import FunctionSampler
+from sklearn.compose import ColumnTransformer
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.model_selection import cross_val_score
+
+imputer = SimpleImputer(strategy='mean')
+onehot = OneHotEncoder()
+ordEnc = OrdinalEncoder()
+
+
+models = {"Logistic":LogisticRegression(),
+          "SVC":SVC(),
+          "KNN":KNeighborsClassifier()
+         }
+
+preprocessor = ColumnTransformer(transformers=[
+                                ("Imputer", SimpleImputer(strategy='mean'),['weight']),
+			        ("CatEncoder", onehot, ["category", "day_of_week"]),
+				("OrdEnc", ordEnc, ["time"])],
+				remainder= "passthrough")
+```
+
+- What I have done here is import all the necessary estimators and transformers that will be used for preprocessing and model training
+- I have created a Instance of Column transformer that will operate on the categorical and numeric columns seperately and output the cleaned features
+
+## 6.1 Models
+
+- As can be seen I have created instances of three different models for training which are as following
+  1. **Logistic Regression** - A linear classifier that is simple to explain and train. 
+  2. **Support vector machines** - another similar model that can fit to both linear and non linear patterns in the data
+  3. **K-Neighbours Classifier** - For a different approach this model classifies the data points based on the euclidean or manhattan distance in N-dimensional space. 
+we will train these three models and see which one performs good enough or is this data even good enough to make predictions. 
+
+```{python}
+
+from utils import outlier_rejection
+
+def get_scores(model_dict, X, y):
+    '''
+    This function returns training score and
+    cross validation score for various models
+    _____________________________________________________
+    params
+    model_dict: (dict) model name and model instance
+    X: X_train array
+    y: y_train arrray
+    '''
+    model_names = []
+    training_score = []
+    cross_validation_scores = []
+
+    for name, model in model_dict.items():
+        pipeline = Pipeline(steps=[("preprocesser", preprocessor),
+                           ("outlier_rejection",
+                            FunctionSampler(func=outlier_rejection)),
+                           ("scaler", StandardScaler()),
+                           ("model", model)])
+
+        pipeline.fit(X, y.values)
+        model_names.append(name)
+        training_score.append(pipeline.score(X, y.values))
+        avg_cross_val_score = np.mean(cross_val_score(pipeline, X, y.values,
+                                          cv=5, scoring='accuracy'))
+        cross_validation_scores.append(avg_cross_val_score)
+
+    return pd.DataFrame({"training_score":training_score,
+                         "cross_val_score":cross_validation_scores},
+              		 index=model_names)
+```
+
+## 6.2 Pipeline
+- Here we have basically defined a function that uses the pipeline we have created to train the models we have defined
+- It will calculate the training scores and the cross validation scores for us of each model. 
+- The basic steps in this pipeline are
+  1. Column transformation which includes imputation and categorical variable encoding
+  2. Next step is removing outliers from the training data. **Note the outliers will only be removed from the training data and not from the testing data
+  3. After this scaling and training takes place. 
+
+```{python}
+#| fig-align: center
+scores = get_scores(model_dict = models, X = X_train, y = y_train)
+scores.plot.bar()
+```
+
