@@ -5,18 +5,7 @@ in the jupyter Notebook containing GoalZone case study
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-
-
-def read_data(url, filename=None):
-    '''
-    This function takes a csv file url and the file name of
-    the file to be retrieved
-    returns a pandas DataFrame of the csv
-    '''
-    return pd.read_csv(filename)
-
-
-
+import numpy as np
 
 
 def validate(df, data_dict):
@@ -61,7 +50,6 @@ def numerics(df, labels):
         num += 1
 
 
-
 def categoricals(df, labels):
     '''
     This function returns how proportion of target variables
@@ -79,7 +67,6 @@ def categoricals(df, labels):
          .plot
          .bar(ax=ax[row]))
         row += 1
-
 
 
 def get_relations(dataframe, y, which):
@@ -100,5 +87,19 @@ def get_relations(dataframe, y, which):
         categoricals(df=dataframe, labels=labels)
 
 
-
-
+def outlier_rejection(X, y):
+    '''
+    This function takes two arrays X and y 
+    and returns the arrays with outliers removed.
+    the outliers are considered to be the data points
+    outside of three standard deviation mark
+    '''
+    X_, y_ = X, y
+    train = np.hstack([X_, y_.reshape(-1, 1)])
+    for i in [0, -3, -2]:
+        Z_scores = np.abs((train[:, i].mean() - train[:, i]) /
+                          train[:, i].std())
+        train = train[Z_scores < 3]
+    X_new = train[:, :-1]
+    y_new = train[:, -1]
+    return X_new, y_new
