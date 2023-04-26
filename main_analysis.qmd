@@ -4,9 +4,10 @@ author: Anurag Patil
 format:
   html:
     grid:
-      body-width: 1100px
+      body-width: 1000px
       margin-width: 150px
     code-fold: true
+    code-tools: true
     theme: Solar
     mainfont: sans-serif
     monofont: monospace
@@ -14,14 +15,25 @@ format:
     toc: true
     toc-depth: 2
     toc-expand: true
-jupyter: data
+panel: center
+jupyter: data_science
 ---
+<br>
 
+#### Before getting into the report
+1. All the code cells are collapsed so the reader can focus on the analysis
+2. Although if you are interested in looking at the code at certain part you can unfold the code block just by clicking on the **"Code"** button provided. 
+3. If you are interested in looking at all the code you can unfold all the code cells at once by using the option in right hand corner. Alternatively you can go to the github repositery where all the code for this is hosted. 
+[repositery](https://github.com/ANP-Oxy/GoalZone)
+
+---
 
 - This is a revamped version of the original case study that I worked on for DataCamp's **"Data Scientist Associate certification".**
 - The dataset as well as the problem scenario was provided by DataCamp. 
 - In this report I will be working on a fictitious business scenario, dealing with a customer behaviour classification problem. 
 - I will clean the data, validate it, do some visual insepction of the data and then work on modelling it. 
+- The tools used for this analysis are python, numpy, pandas, matplotlib, seaborn, scikit-learn, imbalanced learn and the report was generated using Quarto. 
+
 
 
 ## 1. Scenario
@@ -35,7 +47,6 @@ jupyter: data
   available.
   
 ---
-
 ## 2. Data
 
 ```{python}
@@ -72,7 +83,9 @@ The basic descriptions of the columns are.<br>
 
 ## 3. Defining the problem
 - **The business wants to predict whether members will attend using the data provided**
-- Since our target variable is binary this is essentially a **Binary Classification** problem
+- Here even though the specific task about predicting whether the member will attend the class or not we should keep in mind that the end goal to increase the number of members joining the class. 
+- Keeping the big picture in the back of the mind before diving into analysis is necessary. 
+- Now, about the data since our target variable is binary this is essentially a **Binary Classification** problem
 - We have to predict whether the member who has registered for the class will attend the class or not. 
 
 Now that we have taken a glimpse of the data, decided what our end goal is let's get into the actual analysis. we will go through this step by step by first validating the data then doing some Exploratory analysis and finally training some machine learning models. 
@@ -301,6 +314,7 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.3, strat
 i'm gonna go ahead and write a function that will provide us with plots for this
 
 ```{python}
+#| fig-align: center
 from utils import get_relations
 get_relations(dataframe = X_train, y = y_train,  which="numerics")
 ```
@@ -403,7 +417,7 @@ preprocessor = ColumnTransformer(transformers=[
 - What I have done here is import all the necessary estimators and transformers that will be used for preprocessing and model training
 - I have created a Instance of Column transformer that will operate on the categorical and numeric columns seperately and output the cleaned features
 
-## 6.1 Models
+### 6.1 Models
 
 - As can be seen I have created instances of three different models for training which are as following
   1. **Logistic Regression** - A linear classifier that is simple to explain and train. 
@@ -415,7 +429,7 @@ we will train these three models and see which one performs good enough or is th
 
 from utils import outlier_rejection
 
-def get_scores(model_dict, X, y):
+def get_scores(model_dict, X, y, metric):
     '''
     This function returns training score and
     cross validation score for various models
@@ -440,7 +454,7 @@ def get_scores(model_dict, X, y):
         model_names.append(name)
         training_score.append(pipeline.score(X, y.values))
         avg_cross_val_score = np.mean(cross_val_score(pipeline, X, y.values,
-                                          cv=5, scoring='accuracy'))
+                                          cv=5, scoring=metric))
         cross_validation_scores.append(avg_cross_val_score)
 
     return pd.DataFrame({"training_score":training_score,
@@ -448,28 +462,186 @@ def get_scores(model_dict, X, y):
               		 index=model_names)
 ```
 
-## 6.2 Pipeline
-- Here we have basically defined a function that uses the pipeline we have created to train the models we have defined
+### 6.2 Pipeline
+- In the above code cell, have basically defined a function that uses the pipeline we have created to train the models we have defined
 - It will calculate the training scores and the cross validation scores for us of each model. 
 - The basic steps in this pipeline are
   1. Column transformation which includes imputation and categorical variable encoding
   2. Next step is removing outliers from the training data. **Note the outliers will only be removed from the training data and not from the testing data**
   3. After this scaling and training takes place. 
 
+### 6.3 Model evaluation
+
 ```{python}
 #| fig-align: center
-scores = get_scores(model_dict = models, X = X_train, y = y_train)
+scores = get_scores(model_dict = models, X = X_train, y = y_train, metric="accuracy")
 scores.plot.bar()
 ```
 
+- Here we can see that Logistic regression has best cross validation score and it's the simplest model
+- SVC is pretty similar in results and it doesn't look like it's overfitting the training data
+- The KNN model has the highest training accuracy but lowest cross validation accuracy which means it's overfitting the training data. 
+- **Not the thing to keep in mind when looking at these metrics is accuracy is not a good metric to judge a classification models, specially when the target variable is highly inbalanced.**
+- Let's calculate ROC_AUC scores for each model using cross vaidation to see how they are really performing. 
+
+
+```{python}
+roc_auc = get_scores(model_dict = models, X = X_train, y = y_train, metric="roc_auc")
+roc_auc[["cross_val_score"]]
+```
+- Once again Logistic Regression has the best performance out of three models. 
+- These ROC_AUC scores are pretty similar to what we say with accuracy. 
+- But this does tell us that the model is not good just by a random chance. It has some good predictive ability. 
+- **An even better metric for testing the models would be confusion_matrix** 
+- Let's see confusion matrix for each model on training data. 
+
+
+```{python}
+#| fig-align: center
+from yellowbrick.classifier import ConfusionMatrix
+
+# Let's use a subset of above mentioned function to do this. 
+
+
+def confusion():
+    pipeline = Pipeline(steps=[("preprocesser", preprocessor),
+                               ("outlier_rejection",
+                                FunctionSampler(func=outlier_rejection)),
+                               ])
+    x_train_c, y_train_c = pipeline.fit_resample(X_train, y_train.values)
+    x_train_scale = StandardScaler().fit_transform(x_train_c)
+    
+    for model in models.values():
+        fig, ax = plt.subplots(figsize=(4, 4))
+        cm = ConfusionMatrix(model, encoder={1:"yes", 0:"No"}, ax=ax)
+        cm.fit(x_train_scale, y_train_c)
+        cm.score(x_train_scale, y_train_c)
+        cm.show()
+confusion()
+```
+- Here we can see very granular view of how the models are fitting on the data
+- As we can see All three of the models have good accuracy when it comes to classifying people "Not" attending the class
+- But the catch here is that the models flag about half of the people who will attend the class and people who will not. 
+- Due to this reason the model has high prediction error when it comes to positive class. 
+- Alright this was base models. Not let's do some hyperparameter tuning on these models and check out their the results. 
+
+## 7. Hyperparameter Tuning
+
+```{python}
+
+params = {"Logistic":  
+          {"model__solver" : ["newton-cg" , "lbfgs", "liblinear", "sag", "saga"], 
+           "model__penalty": ["l1", "l2", "elasticnet"],
+           "model__C": [0.1, 1, 10, 100, 1000]}, 
+          
+          "SVC" : 
+          {'model__kernel':['linear', 'poly', 'rbf', 'sigmoid'],
+          'model__C': [100, 10, 1.0, 0.1, 0.001]}, 
+          
+          "KNN": 
+          {"model__n_neighbors": np.arange(1,21,1),
+          "model__metric": ['euclidean', 'manhattan', 'minkowski'],
+           "model__weights": ['uniform', 'distance']}
+         }
+```
+
+**In above code cell I have created a nested dictionary that contains hyperparameters for each model. 
+I know that's a lot of parameters but we can afford to do exhaustive search due to dataset being very small. 
+Now I will write a custom function that uses **GridSeachCV** from scikit-learn and give us best parameters for each model. 
+
+```{python}
+#| output: false
+
+from sklearn.model_selection import GridSearchCV
+hyperparameters = []
+best_scores = []
+def tune_model(model, param_grid):
+    pipeline = Pipeline(steps=[("preprocesser", preprocessor),
+                               ("outlier_rejection",FunctionSampler(func=outlier_rejection)),
+                               ("scaler", StandardScaler()),
+                               ("model", model)])
+    GSC = GridSearchCV(pipeline, param_grid=param_grid, 
+                           cv = 5, scoring='roc_auc')
+    GSC.fit(X_train, y_train.values)
+    hyperparameters.append(GSC.best_params_)
+    best_scores.append(GSC.best_score_)
+
+
+for name, model in models.items():
+    estimator = model
+    tune_model(estimator, params[name])
+```
+
+```{python}
+for i in hyperparameters:
+	print(i, '\n')
+print(best_scores)
+```
+- here we can see the hyperparameters chosen for the models and the best accuracy that was obtaind by those parameters. 
+- Overall Logistic Regression model has performed most consistently during this analysis and that's the one we will use as the final model here
+- Let's train a final model and test it on test set. 
+
+
+## 8. Final Training. 
+
+
+```{python}
+logreg = Pipeline(steps=[("preprocesser", preprocessor),
+                         ("outlier_rejection", 
+                          FunctionSampler(func=outlier_rejection)),
+                          ("scaler", StandardScaler()),
+                          ("LogisticRegression", 
+                          LogisticRegression(C=0.1, penalty='l1',solver='liblinear'))])
+
+
+logreg.fit(X_train, y_train.values)
+logreg.score(X_test, y_test.values)
+```
+
+- Finally we can see the performance of our model on the test data
+- This doesnt tell us much though, let's look at some more metrics. 
+
+```{python}
+#| fig-align: center
+from yellowbrick.classifier import ClassificationReport
+
+cr = ClassificationReport(logreg, encoder={0:"No", 1:"Yes"})
+
+cr.fit(X_train, y_train.values)
+cr.score(X_test, y_test.values)
+cr.show()
+```
+
+## 9. Final Thougts
+1. Logistic Regression and SVM machines achieved fairly similar results on the train set
+2. Logistic Regression is slightly better than SVM and seems like the best fit as the solution for GoalZone. 
+3. The reason both of these models performed better than the K nearest neighbor is because they used linear decision boundaries. 
+
+```{python}
+#| fig-align: center
+from yellowbrick.classifier import class_prediction_error
+
+class_prediction_error(logreg, X_train, y_train.values, X_test, y_test.values, encoder={0:"No", 1:"Yes"});
+```
+
+- we can see prediction error for both of the classes here. 
+- Overall the model is performing better than just doing random guesses but It's hard to tell if it's really a significant difference. 
+- There should be more investigation done into this and different approaches need to be tried. 
+- This problem can also be looked at through the lens of time series and see if it's possible to predict class attendence over time. 
+- The data provided was very small in size and collecting more data with better features is also a good idea. 
+- In this dataset there weren't a lot of features that explained the target variable well besides weight and Months_as_member
+- If GoalZone wants to use this model for freeing up more seats for their classes about 65-75% seats can be freed according to the model. Again there might be some time series components here that need to be looked at but if you keep the prediction error in mind the business should be able to free up more seats.
+
+
+---
 
 
 
-
-
-
-
-
-
-
-
+**References**
+ 1. [datacamp](https://app.datacamp.com/)
+ 2. [pandas](https://pandas.pydata.org/)
+ 3. [Numpy](https://numpy.org/)
+ 4. [Scikit-learn](https://scikit-learn.org/stable/)
+ 5. [Matplotlib](https://matplotlib.org/)
+ 6. [Imbalanced-learn](https://imbalanced-learn.org/stable/)
+ 7. [Quarto](https://quarto.org/)
